@@ -2,6 +2,7 @@ import torch
 from torch import nn
 from src.models.base import *
 from typing import Dict, Any
+from .cbam import CBAMBlock
 
 _BASE_CHANNELS = 64
 
@@ -14,6 +15,12 @@ class EVFlowNet(nn.Module):
         self.encoder2 = general_conv2d(in_channels = _BASE_CHANNELS, out_channels=2*_BASE_CHANNELS, do_batch_norm=not self._args.no_batch_norm)
         self.encoder3 = general_conv2d(in_channels = 2*_BASE_CHANNELS, out_channels=4*_BASE_CHANNELS, do_batch_norm=not self._args.no_batch_norm)
         self.encoder4 = general_conv2d(in_channels = 4*_BASE_CHANNELS, out_channels=8*_BASE_CHANNELS, do_batch_norm=not self._args.no_batch_norm)
+
+        self.cbam1 = CBAMBlock(_BASE_CHANNELS)
+        self.cbam2 = CBAMBlock(2*_BASE_CHANNELS)
+        self.cbam3 = CBAMBlock(4*_BASE_CHANNELS)
+        self.cbam4 = CBAMBlock(8*_BASE_CHANNELS)
+        self.cbam5 = CBAMBlock(int(_BASE_CHANNELS/2))
 
         self.resnet_block = nn.Sequential(*[build_resnet_block(8*_BASE_CHANNELS, do_batch_norm=not self._args.no_batch_norm) for i in range(2)])
 
@@ -33,13 +40,21 @@ class EVFlowNet(nn.Module):
         # encoder
         skip_connections = {}
         inputs = self.encoder1(inputs)
+        inputs = self.cbam1(inputs)
         skip_connections['skip0'] = inputs.clone()
+
         inputs = self.encoder2(inputs)
+        inputs = self.cbam2(inputs)
         skip_connections['skip1'] = inputs.clone()
+
         inputs = self.encoder3(inputs)
+        inputs = self.cbam3(inputs)
         skip_connections['skip2'] = inputs.clone()
+
         inputs = self.encoder4(inputs)
+        inputs = self.cbam4(inputs)
         skip_connections['skip3'] = inputs.clone()
+        
 
         # transition
         inputs = self.resnet_block(inputs)
@@ -48,18 +63,26 @@ class EVFlowNet(nn.Module):
         flow_dict = {}
         inputs = torch.cat([inputs, skip_connections['skip3']], dim=1)
         inputs, flow = self.decoder1(inputs)
+        #inputs = self.cbam3(inputs)
+        #flow = self.cbam3(flow)
         flow_dict['flow0'] = flow.clone()
 
         inputs = torch.cat([inputs, skip_connections['skip2']], dim=1)
         inputs, flow = self.decoder2(inputs)
+        #inputs = self.cbam2(inputs)
+        #flow = self.cbam2(flow)
         flow_dict['flow1'] = flow.clone()
 
         inputs = torch.cat([inputs, skip_connections['skip1']], dim=1)
         inputs, flow = self.decoder3(inputs)
+        #inputs = self.cbam1(inputs)
+        #flow = self.cbam1(flow)
         flow_dict['flow2'] = flow.clone()
 
         inputs = torch.cat([inputs, skip_connections['skip0']], dim=1)
         inputs, flow = self.decoder4(inputs)
+        #inputs = self.cbam5(inputs)
+        #flow = self.cbam5(flow)
         flow_dict['flow3'] = flow.clone()
 
         return flow

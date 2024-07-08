@@ -173,12 +173,14 @@ class EventSlicer:
             return None
         return self.ms_to_idx[time_ms]
 
-
+#+++++++++++++++++++++++++++++
 class Sequence(Dataset):
     def __init__(self, seq_path: Path, representation_type: RepresentationType, mode: str = 'test', delta_t_ms: int = 100,
-                 num_bins: int = 4, transforms=[], name_idx=0, visualize=False, load_gt=False):
+                 num_bins: int = 4, transforms=[tf.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])], name_idx=0, visualize=False, load_gt=False):
         assert num_bins >= 1
         assert delta_t_ms == 100
+        print("++++++++")
+        print(seq_path)
         assert seq_path.is_dir()
         assert mode in {'train', 'test'}
         assert representation_type is not None
@@ -292,7 +294,14 @@ class Sequence(Dataset):
     def load_flow(flowfile: Path):
         assert flowfile.exists()
         assert flowfile.suffix == '.png'
-        flow_16bit = iio.imread(str(flowfile), plugin='PNG-FI')
+
+
+        flow_16bit = iio.imread(str(flowfile))#, plugin='PNG-FI')
+
+#++++++++++++++自己加的+++++++++++
+        if flow_16bit.dtype != np.uint16:
+            flow_16bit = flow_16bit.astype(np.uint16)
+
         flow, valid2D = flow_16bit_to_float(flow_16bit)
         return flow, valid2D
 
@@ -536,6 +545,19 @@ class DatasetProvider:
         assert delta_t_ms == 100
         self.config = config
         self.name_mapper_test = []
+
+        #data augmentations++++++++++++++++++++++++++++++++++++++++++
+        self.data_augmentations = tf.Compose([
+                tf.RandomResizedCrop(128),      # 随机裁剪并调整大小
+                tf.RandomHorizontalFlip(),      # 随机水平翻转
+                tf.RandomVerticalFlip(),        # 随机垂直翻转
+                tf.RandomRotation(30),          # 随机旋转
+                tf.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # 随机颜色抖动
+                tf.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.8, 1.2), shear=10),  # 随机仿射变换
+                tf.ToTensor(),                  # 转换为张量
+                tf.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # 归一化
+                ])
+        #print(self.data_augmentations)
 
         # Assemble test sequences
         test_sequences = list()
